@@ -1,0 +1,15 @@
+# Python cache folder
+__pycache__/
+
+# Environment variables
+.env
+
+# Database files
+*.db
+
+# Log files
+*.log
+
+# Package-lock
+package-lock.json
+

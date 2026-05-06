@@ -1,0 +1,59 @@
+class GUILDS:
+    LEAGUE_OF_PIXELS =  459472853360967680
+GUILDS = GUILDS()
+
+class MESSAGES:
+    LOOKING_FOR_GAME =  884513845207515226
+MESSAGES = MESSAGES()
+
+class ROLES:
+    LOOKING_FOR_GAME =  748940295974027324
+    USER =              884415788524654632
+    MINION =            885140347070595102
+    KNIGHT =            876152198642421831
+    CHAMPION =          946143243710640138
+    HERO =              965977110474801202
+
+ROLES = ROLES()
+
+class CHANNELS:
+    BOT =               650398918147964929
+    SUBMIT =            643611016613199873
+    SUGGESTIONS =       884549848836218911
+    BUGS =              884549823053848596
+    CONTEST =           895763764765393008
+CHANNELS = CHANNELS()
+
+class USERS:
+    SYSTEM =          1261287111701696575
+    IGNISSO =           427135054888697869
+    QTX =               490964640046514188
+    PRIM =              782963903738019860
+USERS = USERS()
+
+class COLORS:
+    GREEN =             0x2aa519
+    RED =               0xcf2121
+    YELLOW =            0xffda16
+    BLUE =              0x4287f5
+COLORS = COLORS()
+
+class ASCII:
+    QUOTE =           "\x22"
+    OPENING_BRACKET = "\x7b"
+    CLOSING_BRACKET = "\x7d"
+ASCII = ASCII()
+
+def roleText(id):
+    if id == 748940295974027324:
+        return "LOOKING_FOR_GAME"
+    elif id == 884415788524654632:
+        return "USER"
+    elif id == 885140347070595102:
+        return "MINION"
+    elif id == 876152198642421831:
+        return "KNIGHT"
+    elif id == 946143243710640138:
+        return "CHAMPION"
+    elif id == 965977110474801202:
+        return "HERO"
