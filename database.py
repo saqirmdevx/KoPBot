@@ -24,3 +24,21 @@ def create_connection(db_file):
     except sqlite3.Error as e:
         print(e)
     return None
+
+def initialize_database(logger=None):
+    db = create_connection(DATABASE)
+    if db is None:
+        raise RuntimeError("Could not open SQLite database during initialization")
+
+    try:
+        cursor = db.cursor()
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_discord_id ON Users(discord_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_total_xp ON Users(total_xp);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_total_xp_desc ON Users(total_xp DESC);")
+        db.commit()
+    except sqlite3.Error:
+        if logger is not None:
+            logger.exception("Failed to initialize SQLite indexes")
+        raise
+    finally:
+        db.close()

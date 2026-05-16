@@ -72,8 +72,7 @@ class discordUser:
             self.discriminator = discordUser.discriminator
             changes = True
 
-        if changes == True:
-            self.commitChanges()
+        return changes
 
         
     def addXP(self):
