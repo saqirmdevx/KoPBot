@@ -55,11 +55,44 @@ def connect(db_file: str = DATABASE, *, readonly: bool = False) -> Iterator[sqli
 
 
 def initialize_database() -> None:
-    """Keep startup compatible with the existing database; do not create a new schema."""
     with connect() as db:
-        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_discord_id ON Users(discord_id)")
-        db.execute("CREATE INDEX IF NOT EXISTS idx_users_total_xp ON Users(total_xp)")
-        db.execute("CREATE INDEX IF NOT EXISTS idx_users_total_xp_desc ON Users(total_xp DESC)")
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS Users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                discord_id TEXT NOT NULL UNIQUE,
+                avatar TEXT,
+                discriminator TEXT,
+                username TEXT,
+                level INTEGER NOT NULL DEFAULT 0,
+                xp_level INTEGER NOT NULL DEFAULT 0,
+                xp_cap INTEGER NOT NULL DEFAULT 0,
+                total_xp INTEGER NOT NULL DEFAULT 0,
+                message_count INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+
+        db.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_discord_id
+            ON Users(discord_id)
+            """
+        )
+
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_users_total_xp
+            ON Users(total_xp)
+            """
+        )
+
+        db.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_users_total_xp_desc
+            ON Users(total_xp DESC)
+            """
+        )
 
 
 def row_to_user(row: sqlite3.Row) -> UserRecord:
