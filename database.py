@@ -3,10 +3,11 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 import sqlite3
+from pathlib import Path
 from typing import Iterator
 
 
-DATABASE = "SQLitePython.db"
+DATABASE = str(Path(__file__).resolve().with_name("SQLitePython.db"))
 
 
 USER_COLUMNS = (
@@ -179,6 +180,15 @@ def update_user(user: UserRecord) -> None:
         )
 
 
+def update_user_profile(user: UserRecord) -> None:
+    """Refresh Discord metadata without overwriting independently earned XP."""
+    with connect() as db:
+        db.execute(
+            "UPDATE Users SET avatar = ?, discriminator = ?, username = ? WHERE discord_id = ?",
+            (user.avatar, user.discriminator, user.username, user.discord_id),
+        )
+
+
 def top_users(limit: int = 3, *, readonly: bool = False) -> list[UserRecord]:
     with connect(readonly=readonly) as db:
         rows = db.execute(
@@ -191,7 +201,7 @@ def top_users(limit: int = 3, *, readonly: bool = False) -> list[UserRecord]:
 def get_rank(user: UserRecord, *, readonly: bool = False) -> int:
     with connect(readonly=readonly) as db:
         row = db.execute(
-            "SELECT COUNT(*) AS rank FROM Users WHERE total_xp >= ?",
+            "SELECT COUNT(*) + 1 AS rank FROM Users WHERE total_xp > ?",
             (user.total_xp,),
         ).fetchone()
     return int(row["rank"])

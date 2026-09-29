@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
 import discord
@@ -12,14 +13,14 @@ from dotenv import load_dotenv
 
 from constants import CHANNELS, GUILDS, MESSAGES, ROLES, USERS
 from custom_formatter import CustomFormatter
-from database import get_or_create_user, get_rank, get_user, initialize_database, top_users, update_user
+from database import get_or_create_user, get_rank, get_user, initialize_database, top_users, update_user, update_user_profile
 from embeds import goodbye, player_card, welcome
 from users import XP_COOLDOWN_SECONDS, add_xp, update_profile
 
 
-load_dotenv(".env")
+load_dotenv(Path(__file__).resolve().with_name(".env"))
 
-DEBUG = int(os.environ.get("DEBUG", "0"))
+DEBUG = os.environ.get("DEBUG", "0").strip().lower() in {"1", "true", "yes", "on"}
 TOKEN = os.environ.get("TOKEN")
 GUILD = discord.Object(id=GUILDS.LEAGUE_OF_PIXELS)
 GAMEPAD = "\U0001F3AE"
@@ -133,10 +134,16 @@ class KoPBot(discord.Client):
                 logger.warning("Could not find role_id=%s for member_id=%s", role_id, member.id)
                 continue
 
-            await member.add_roles(role)
+            try:
+                await member.add_roles(role)
+            except discord.HTTPException:
+                logger.exception("Failed to add role_id=%s to member_id=%s", role_id, member.id)
+                continue
             logger.debug("User %s got new role %s", member.id, role.name)
 
     async def on_member_join(self, member: discord.Member) -> None:
+        if member.guild.id != GUILDS.LEAGUE_OF_PIXELS:
+            return
         if self.cached_member_count is not None:
             self.cached_member_count += 1
         await self.update_status()
@@ -145,18 +152,23 @@ class KoPBot(discord.Client):
             logger.debug("DEBUG mode: skipped join role/database writes for member_id=%s", member.id)
             return
 
+        get_or_create_user(member.id, avatar_key(member), discriminator(member), display_name(member))
+
         role = guild_role(member, ROLES.USER)
         if role is not None:
-            await member.add_roles(role)
-            logger.debug("User %s got new role %s", member.id, role.name)
+            try:
+                await member.add_roles(role)
+                logger.debug("User %s got new role %s", member.id, role.name)
+            except discord.HTTPException:
+                logger.exception("Failed to add join role for member_id=%s", member.id)
 
         channel = member.guild.get_channel(CHANNELS.BOT)
         if isinstance(channel, discord.abc.Messageable):
             await channel.send(embed=welcome(member))
 
-        get_or_create_user(member.id, avatar_key(member), discriminator(member), display_name(member))
-
     async def on_member_remove(self, member: discord.Member) -> None:
+        if member.guild.id != GUILDS.LEAGUE_OF_PIXELS:
+            return
         if self.cached_member_count is not None and self.cached_member_count > 0:
             self.cached_member_count -= 1
         await self.update_status()
@@ -172,13 +184,16 @@ class KoPBot(discord.Client):
     async def on_message(self, message: discord.Message) -> None:
         if message.author.bot or message.author.id == USERS.SYSTEM or not isinstance(message.author, discord.Member):
             return
+        if message.author.guild.id != GUILDS.LEAGUE_OF_PIXELS:
+            return
 
         if is_debug():
             logger.debug("DEBUG mode: skipped XP/database writes for member_id=%s", message.author.id)
             return
 
         now = time.monotonic()
-        if now - self.last_xp_at.get(message.author.id, 0) < XP_COOLDOWN_SECONDS:
+        last_xp = self.last_xp_at.get(message.author.id)
+        if last_xp is not None and now - last_xp < XP_COOLDOWN_SECONDS:
             return
 
         user = get_or_create_user(
@@ -194,12 +209,19 @@ class KoPBot(discord.Client):
             discriminator=discriminator(message.author),
         )
 
-        if add_xp(user):
-            await message.channel.send(f"GG {message.author.mention}, you just advanced to level {user.level}!")
-            await self.update_level_roles(message.author, user.level)
-
+        leveled_up = add_xp(user)
+        # Commit XP and reserve the cooldown before any Discord I/O can yield or fail.
         update_user(user)
         self.last_xp_at[message.author.id] = now
+
+        if leveled_up:
+            try:
+                await message.channel.send(f"GG {message.author.mention}, you just advanced to level {user.level}!")
+            except discord.HTTPException:
+                logger.exception("Failed to announce level-up for member_id=%s", message.author.id)
+
+        # Also retry missing roles after a previous permission/network failure.
+        await self.update_level_roles(message.author, user.level)
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
         if payload.message_id != MESSAGES.LOOKING_FOR_GAME or str(payload.emoji) != GAMEPAD:
@@ -251,10 +273,11 @@ async def rank(interaction: discord.Interaction, user: discord.Member | None = N
         await interaction.response.send_message("This command can only be used in the server.", ephemeral=True)
         return
 
+    await interaction.response.defer()
     if is_debug():
         discord_user = get_user(member.id, readonly=True)
         if discord_user is None:
-            await interaction.response.send_message("No user data found for that member.", ephemeral=True)
+            await interaction.followup.send("No user data found for that member.", ephemeral=True)
             return
     else:
         discord_user = get_or_create_user(member.id, avatar_key(member), discriminator(member), display_name(member))
@@ -264,16 +287,17 @@ async def rank(interaction: discord.Interaction, user: discord.Member | None = N
             avatar=avatar_key(member),
             discriminator=discriminator(member),
         ):
-            update_user(discord_user)
+            update_user_profile(discord_user)
 
-    await interaction.response.send_message(embed=player_card(discord_user, get_rank(discord_user, readonly=is_debug())))
+    await interaction.followup.send(embed=player_card(discord_user, get_rank(discord_user, readonly=is_debug())))
 
 
 @bot.tree.command(name="top", description="Get TOP3 discord chatters")
 async def top(interaction: discord.Interaction) -> None:
+    await interaction.response.defer()
     users = top_users(limit=3, readonly=is_debug())
     if not users:
-        await interaction.response.send_message("No users in the database yet.")
+        await interaction.followup.send("No users in the database yet.")
         return
 
     if interaction.guild is not None and not is_debug():
@@ -282,15 +306,20 @@ async def top(interaction: discord.Interaction) -> None:
             if member is None:
                 try:
                     member = await interaction.guild.fetch_member(int(user.discord_id))
+                except discord.NotFound:
+                    # Historical leaderboard entries may belong to members who left.
+                    logger.info("Top user_id=%s is absent from guild_id=%s; using saved profile", user.discord_id, interaction.guild.id)
+                    continue
                 except discord.HTTPException:
                     logger.exception("Failed to refresh top user from Discord; using cached DB row for %s", user.discord_id)
                     continue
 
             if update_profile(user, username=display_name(member), avatar=avatar_key(member), discriminator=discriminator(member)):
-                update_user(user)
+                update_user_profile(user)
 
+    users = top_users(limit=3, readonly=is_debug())
     embeds = [player_card(user, get_rank(user, readonly=is_debug())) for user in users]
-    await interaction.response.send_message(embeds=embeds)
+    await interaction.followup.send(embeds=embeds)
 
 
 if __name__ == "__main__":

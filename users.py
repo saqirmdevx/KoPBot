@@ -37,10 +37,11 @@ def add_xp(user: UserRecord) -> bool:
     user.xp_cap = xp_to_level_up(user.level)
     user.message_count += 1
 
-    if user.xp_level > user.xp_cap:
+    leveled_up = False
+    while user.xp_level >= user.xp_cap:
         user.level += 1
         user.xp_level -= user.xp_cap
         user.xp_cap = xp_to_level_up(user.level)
-        return True
+        leveled_up = True
 
-    return False
+    return leveled_up
